@@ -2,6 +2,9 @@
 #include <queue>
 #include <pthread.h>
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 #include "blockchain.h"
 #include "blockchain_private.h"
@@ -10,12 +13,14 @@ using namespace std;
 
 bool gInitialized = false;
 pthread_mutex_t gInitMutex = PTHREAD_MUTEX_INITIALIZER;
-pthread_mutex_t gMutex;
+pthread_mutex_t gAddMutex;
+pthread_mutex_t gRootsMutex;
+pthread_cond_t gAddCv;
 vector<Block> gBlocks;
+vector<int> gRoots;
 queue<int> gAddQueue;
 queue<int> gAddNowQueue;
 bool gCloseFlag;
-int gLongestChain; // TODO
 
 /*
  * DESCRIPTION: This function initiates the Block chain, and creates the genesis Block.  The genesis Block does not hold any transaction data   
@@ -38,6 +43,7 @@ int init_blockchain()
     // Create genesis block
     Block genesis;
     gBlocks.push_back(genesis);
+    gRoots.push_back(0);
 
     pthread_t daemonThread;
     int error = pthread_create(&daemonThread, nullptr, daemon, nullptr);
@@ -48,6 +54,15 @@ int init_blockchain()
         pthread_mutex_unlock(&gInitMutex);
         return -1;
     }
+
+    init_hash_generator();
+
+    pthread_mutex_init(&gAddMutex, NULL);
+    pthread_mutex_init(&gRootsMutex, NULL);
+    pthread_cond_init (&gAddCv, NULL);
+
+    // Initialize random seed
+    srand(time(NULL));
 
     gInitialized = true;
     pthread_mutex_unlock(&gInitMutex);
@@ -79,16 +94,41 @@ int add_block(char *data , int length)
         char *copiedData = new char[length];
         memcpy(copiedData, data, length);
 
-        // TODO set father
-        int father = ...;
+        
+        int father = getFatherNum();
         Block block;
         block.father = father;
         block.data = copiedData;
+        block.dataLength = length;
         block.chainSize = gBlocks[father].chainSize + 1;
 
-        pthread_mutex_lock(&gInitMutex);
-        gAddQueue.push(block);
-        pthread_mutex_unlock(&gInitMutex);
+        pthread_mutex_lock(&gAddMutex);
+
+        // Find a free spot for the block
+        int blockNum = -1;
+        for (int i = 0 ; i < gBlocks.size(); i++)
+        {
+            if (gBlocks[i] == nullptr)
+            {
+                blockNum = i;
+                break;
+            }
+        }
+
+        if (blockNum >= 0)
+        {
+            gBlocks[blockNum] = block;
+        }
+        else
+        {
+            gBlocks.push_back(block);
+            blockNum = gBlocks.size() - 1;
+        }
+
+        gAddQueue.push(blockNum);
+        pthread_cond_signal(&gAddCv);
+
+        pthread_mutex_unlock(&gAddMutex);
     }
     catch (const std::exception& e)
     {
@@ -97,7 +137,125 @@ int add_block(char *data , int length)
     }
 }
 
+int getFatherNum()
+{
+    assert(gRoots.size() > 0);
+
+    vector<int> longestChains;
+    int longestChainSize = gBlocks[gRoots[0]].chainSize;
+
+    longestChains.push_back(gRoots[0]);
+    for (int i = 1; i < gRoots.size(); i++)
+    {
+        if (gBlocks[gRoots[i]].chainSize == longestChainSize)
+        {
+            longestChains.push_back(gRoots[i]);
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    // Get randomly chosen longest chain
+    return longestChains[rand() % longestChains.size()];
+}
+
 void blockchain_daemon()
 {
+    while (true)
+    {
+        pthread_mutex_lock(&gAddMutex);
+
+        int blockNum;
+        Block* block;
+        bool addNow = false;
+
+        while (gAddQueue.empty() && gAddNowQueue.empty())
+        {
+            pthread_cond_wait(&gAddCv, &gAddMutex);
+        }
+
+        if (!gAddNowQueue.empty())
+        {
+            blockNum = gAddNowQueue.front();
+            gAddNowQueue.pop();
+            addNow = true;
+        }
+        else
+        {
+            blockNum = gAddQueue.front();
+            gAddQueue.pop();
+        }
+
+        block = &gBlocks[blockNum];
+
+        pthread_mutex_unlock(&gAddMutex);
+
+        if (block->father < 0)
+        {
+            block->father = getFatherNum();
+        }
+
+        if (block->toLongest)
+        {
+            pthread_mutex_lock(&gRootsMutex);
+
+            int longestFatherNum = getFatherNum();
+            Block& longestFather = gBlocks[longestFatherNum];
+            Block& father = gBlocks[block->father];
+
+            if (longestFather.chainSize > father.chainSize)
+            {
+                block->father = longestFatherNum;
+            }
+
+            int nonce = generate_nonce(blockNum, block->father);
+            char* newData = generate_hash(block->data, block->dataLength, nonce);
+
+            delete block->data;
+            block->data = newData;
+            block->dataLength = HASH_LEN;
+
+
+        }
+
+        int nonce = generate_nonce(blockNum, block->father);
+        char* newData = generate_hash(block->data, block->dataLength, nonce);
+
+        delete block->data;
+        block->data = newData;
+        block->dataLength = HASH_LEN;
+
+        pthread_mutex_lock(&gAddMutex);
+
+        bool requeue = false;
+
+        if (block->father < 0)
+        {
+            block->father = getFatherNum();
+            requeue = true;
+        }
+        else if (block->toLongest)
+        {
+            int longestFatherNum = getFatherNum();
+            Block& longestFather = gBlocks[longestFatherNum];
+            Block& father = gBlocks[block->father];
+
+            if (longestFather.chainSize > father.chainSize)
+            {
+                block->father = longestFatherNum;
+                requeue = true;
+            }
+        }
+
+        if (requeue)
+        {
+            if (addNow)
+            {
+                gAddNowQueue.push()
+            }
+        }
+    }
     
 }
