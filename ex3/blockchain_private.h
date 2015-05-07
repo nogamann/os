@@ -1,5 +1,7 @@
 #pragma once
 
+#include <iostream>
+
 #define ERROR(msg) std::cerr << "thread library error: " << \
     msg << " [" << __FILE__ << ":" << __FUNCTION__ << ":" << __LINE__ << "]" << std::endl
 
@@ -13,17 +15,38 @@ struct Block
     bool attached;
     int chainSize;
     bool toLongest;
+    bool deleted;
 
     Block()
     {
-        father = 0;
         data = nullptr;
+        clear();
+        deleted = false;
+    }
+
+    void clear()
+    {
+        if (data != nullptr)
+        {
+            delete[] data;
+            data = nullptr;
+        }
+
+        father = 0;
         dataLength = 0;
         attached = false;
         chainSize = 0;
         toLongest = false;
+        deleted = true;
+    }
+
+    ~Block()
+    {
+        clear();
     }
 };
 
-int getFatherNum();
-void blockchain_daemon();
+int getLongestChain();
+void* blockchain_daemon(void*);
+void doClose();
+int getGlobalMutex();

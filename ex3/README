@@ -1,0 +1,30 @@
+nogamann, benk
+Noga Mann (302830252), Ben Kantor (304865090)
+Ex: 2
+
+FILES:
+README              - this file
+priority_queue.cpp  - implementation of a thread priority queue
+uthreads.cpp        - uthreads library implementation
+uthreads.h          - uthreads library header
+uthreads_private.h  - uthreads private header file
+Makefile
+
+REMARKS:
+
+ANSWERS:
+
+Question 1
+----------
+RR pro: Any thread is promised to wait a time proportional to the number of threads in the system.
+In RR+ this is no longer correct, higher priority threads can starve lower priority threads.
+RR con: Can cause significant overhead for CPU intensive threads. RR+ does not solve this issue.
+PQ pro: Can lead to a more interactive system by putting interactive threads in a higher priority.
+RR+ improves on that by adding preemption.
+PQ con: Can cause starvation of lower priority threads. RR+ does not solve this issue (except for
+the case of a queue with a single thread).
+
+Question 2
+----------
+An example is a case when a process is waiting for data to be read from the disk. It is then blocked
+until the data was fully read and is ready.
