@@ -24,7 +24,7 @@ $(TARGETS): $(LIBOBJ)
 	$(RANLIB) $@
 
 clean:
-	$(RM) $(TARGETS) $(LIBOBJ) *~ *core
+	$(RM) $(TARGETS) $(LIBOBJ) test0 *~ *core
 
 depend:
 	makedepend -- $(CFLAGS) -- $(SRC) $(LIBSRC)
@@ -38,7 +38,7 @@ test0.o: blockchain.h test0.cpp
 	$(CC) -c ./test0.cpp
 
 test0: $(TARGETS) blockchain_private.h ./test0.o
-	$(CC) ./test0.o -lblockchain -lhash  -lpthread -lcrypto -L./ -o test0
+	$(CC) ./test0.o  -L. -lblockchain -lhash  -lpthread -L /usr/local/ssl/lib/ -lcrypto -o test0
 	
 test: test0
 

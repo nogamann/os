@@ -3,9 +3,9 @@
 #include <list>
 #include <deque>
 #include <stdexcept>
+#include <iostream>
 #include <assert.h>
 #include <pthread.h>
-#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -105,8 +105,6 @@ int getGlobalMutex()
         return -1;
     }
 
-    cout << "got init" << endl;
-
     if (gClose)
     {
         pthread_mutex_unlock(&gInitMutex);
@@ -119,15 +117,11 @@ int getGlobalMutex()
         return -1;
     }
 
-    cout << "got global" << endl;
-
     if ((res = pthread_mutex_unlock(&gInitMutex)))
     {
         ERROR("pthread_mutex_lock returned " << res);
         return -1;
     }
-
-    cout << "released init" << endl;
 
     return 0;
 }
@@ -151,42 +145,36 @@ int add_block(char *data , int length)
         return -1;
     }
 
-    cout << "add_block before" << endl;
-
     if (getGlobalMutex())
     {
         return -1;
     }
 
-    cout << "add_block after" << endl;
-
     int res;
 
     try
     {
-        Block block;
-
         // Find a free spot for the block
         int blockNum = -1;
         for (size_t i = 0; i < gBlocks.size(); i++)
         {
             if (gBlocks[i].deleted)
             {
+                gBlocks[i].deleted = false;
                 blockNum = i;
-                gBlocks[i] = block;
                 break;
             }
         }
 
         if (blockNum < 0)
         {
-            gBlocks.push_back(block);
+            gBlocks.emplace_back();
             blockNum = gBlocks.size() - 1;
         }
 
         // Copy data so caller can free it
-        char *copiedData = new char[length];
-        memcpy(copiedData, data, length);
+        char *copiedData = (char*)malloc(length);
+        std::copy(data, data + length, copiedData);
 
         int father = getLongestChain();
         gBlocks[blockNum].father = father;
@@ -197,7 +185,7 @@ int add_block(char *data , int length)
         gAddQueue.push_back(blockNum);
         res = blockNum;
 
-        cout << "add_block " << blockNum << endl;
+        cout << "*** add_block " << blockNum << endl;
 
         if (pthread_cond_signal(&gAddCv))
         {
@@ -212,7 +200,6 @@ int add_block(char *data , int length)
 
     pthread_mutex_unlock(&gMutex);
 
-    cout << "add_block released global" << endl;
     return res;
 }
 
@@ -247,7 +234,6 @@ void* blockchain_daemon(void*)
         pthread_mutex_lock(&gMutex);
 
         int blockNum;
-        Block* block;
         bool addNow = false;
 
         // If queues are empty, wait for them to fill
@@ -255,15 +241,13 @@ void* blockchain_daemon(void*)
         {
             if (!gClose)
             {
-                cout << "waiting..." << endl;
                 pthread_cond_wait(&gAddCv, &gMutex);
-                cout << "awake!" << endl;
             }
 
             // If no more stuff in queue and need to close, close chain and return
             if (gAddQueue.empty() && gAddNowQueue.empty() && gClose)
             {
-                cout << "CLOSING!!!!!!!!" << endl;
+                cout << "*** CLOSING!!!!!!!!" << endl;
                 doClose();
                 pthread_exit(NULL);
             }
@@ -283,24 +267,25 @@ void* blockchain_daemon(void*)
             gAddQueue.pop_front();
         }
 
-        block = &gBlocks[blockNum];
+        // Copy block so vector can be reallocated during hash...
+        Block block = gBlocks[blockNum];
 
         // If block's father was pruned, get another father
-        if (block->father < 0)
+        if (block.father < 0)
         {
-            block->father = getLongestChain();
+            block.father = getLongestChain();
         }
 
         // If block is toLongest, make sure its father is in the longest chain and don't unlock
-        if (block->toLongest)
+        if (block.toLongest)
         {
             int longestFatherNum = getLongestChain();
             Block& longestFather = gBlocks[longestFatherNum];
-            Block& father = gBlocks[block->father];
+            Block& father = gBlocks[block.father];
 
             if (longestFather.chainSize > father.chainSize)
             {
-                block->father = longestFatherNum;
+                block.father = longestFatherNum;
             }
         }
         else
@@ -309,31 +294,31 @@ void* blockchain_daemon(void*)
             pthread_mutex_unlock(&gMutex);
         }
 
-        int nonce = generate_nonce(blockNum, block->father);
-        char* newData = generate_hash(block->data, block->dataLength, nonce);
+        int nonce = generate_nonce(blockNum, block.father);
+        char* newData = generate_hash(block.data, block.dataLength, nonce);
         //char* newData = new char[16];
-        //strcpy(newData, "lala");
+        //newData[0] = 'l'; newData[1] = 'a';  newData[2] = 'l';  newData[3] = 'a'; newData[4] = '\0'; 
 
-        delete[] block->data;
-        block->data = newData;
-        block->dataLength = HASH_LEN;
+        free(block.data);
+        block.data = newData;
+        block.dataLength = HASH_LEN;
 
         if (gClose)
         {
-            string data(block->data, HASH_LEN);
-            cout << "Block #" << blockNum << ", data: " << data << endl;
+            string data(block.data, HASH_LEN);
+            cout << "*** Block #" << blockNum << ", data: " << data << endl;
             continue;
         }
 
         // Lock after hash and recheck father if wasn't toLongest
-        if (!block->toLongest)
+        if (!block.toLongest)
         {
             pthread_mutex_lock(&gMutex);
 
             // If father was pruned, requeue and continue
-            if (block->father < 0)
+            if (block.father < 0)
             {
-                block->father = getLongestChain();
+                block.father = getLongestChain();
                 if (addNow)
                 {
                     gAddNowQueue.push_back(blockNum);
@@ -349,12 +334,12 @@ void* blockchain_daemon(void*)
         }
 
         // Attached block is the new root of the chain, replace father
-        gRoots.remove(block->father);
+        gRoots.remove(block.father);
 
-        block->chainSize = gBlocks[block->father].chainSize + 1;
+        block.chainSize = gBlocks[block.father].chainSize + 1;
 
         // Add block to Roots, sorted by chain size
-        if (gRoots.empty() || gBlocks[gRoots.back()].chainSize >= block->chainSize)
+        if (gRoots.empty() || gBlocks[gRoots.back()].chainSize >= block.chainSize)
         {
             gRoots.push_back(blockNum);
         }
@@ -362,16 +347,17 @@ void* blockchain_daemon(void*)
         {
             for (auto it = gRoots.begin(); it != gRoots.end(); it++)
             {
-                if (gBlocks[*it].chainSize <= block->chainSize)
+                if (gBlocks[*it].chainSize <= block.chainSize)
                 {
                     gRoots.insert(it, blockNum);
                 }
             }
         }
 
-        cout << "attaching " << blockNum << " to " << block->father << endl;
+        cout << "*** attaching " << blockNum << " to " << block.father << endl;
 
-        block->attached = true;
+        block.attached = true;
+        gBlocks[blockNum] = std::move(block);
         gNumOfBlocks++; 
 
         pthread_mutex_unlock(&gMutex);
@@ -459,6 +445,7 @@ int prune_chain()
         int cur = root;
         while (blocksToDelete[cur])
         {
+            cout << "*** prune " << cur << endl;
             int father = gBlocks[cur].father;
             gBlocks[cur].clear();
             cur = father;
@@ -488,6 +475,25 @@ int prune_chain()
     pthread_mutex_unlock(&gMutex);
 
     return 0;
+}
+
+/*
+ * DESCRIPTION: Without blocking, check whether block_num was added to the chain.
+ *      The block_num is the assigned value that was previously returned by add_block.
+ * RETURN VALUE: 1 if true and 0 if false. If the block_num doesn't exist, return -2; In case of other errors, return -1.
+ */
+int was_added(int block_num)
+{
+    int res;
+    if (getGlobalMutex())
+    {
+        return -1;
+    }
+
+    res = block_num < (int)gBlocks.size() ? (int)gBlocks[block_num].attached : 0;
+
+    pthread_mutex_unlock(&gMutex);
+    return res;
 }
 
 /*

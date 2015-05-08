@@ -16,50 +16,60 @@ int main() {
 	cout << "********* start test **********" << endl;
 	init_blockchain();
 
-	cout << "finish initialing " << endl;
+	cout << "finish initializing " << endl;
 
 
 	char l[] = "lll";
 	char* pl = l;
-	cout << "add 1:" << endl;
-	cout << add_block(pl, 4) << endl;
 
-	cout << "add 2:" << endl;
-	cout << add_block(pl, 4) << endl;
-	cout << "add 3:" << endl;
-	cout << add_block(pl, 4) << endl;
+	add_block(pl, 4);
+	add_block(pl, 4);
+	add_block(pl, 4);
+	add_block(pl, 4);
+	add_block(pl, 4);
+	add_block(pl, 4);
 
-	cout << "wait for adding to chain" << endl;;
-
-	while (chain_size() == 0);
-
-	cout << "somthing added!" << endl;;
-
-	cout << "3 is now to_longest" << endl;
 	to_longest(3);
-
+	attach_now(2);
 
 	sleep(5);
 
-	cout << "add 4:" << endl;
-	cout << add_block(pl, 4) << endl;
-	cout << "add 5:" << endl;
-	cout << add_block(pl, 4) << endl;
+	to_longest(add_block(pl, 4));
+	to_longest(add_block(pl, 4));
+	to_longest(add_block(pl, 4));
+	to_longest(add_block(pl, 4));
+	to_longest(add_block(pl, 4));
+	to_longest(add_block(pl, 4));
 
-	cout << "5 is being attach_now" << endl;
 	attach_now(5);
 
 	sleep(5);
 
-	//	printChain();
-	cout << "final size: " << chain_size() << endl;
-	cout << "add 6:" << endl;
 	cout << add_block(pl, 4) << endl;
 
-	cout << "closing" << endl;
+	add_block(pl, 4);
+	add_block(pl, 4);
+	add_block(pl, 4);
+	add_block(pl, 4);
+	add_block(pl, 4);
+	add_block(pl, 4);
+	prune_chain();
+	add_block(pl, 4);
+	add_block(pl, 4);
+	add_block(pl, 4);
+	add_block(pl, 4);
+	add_block(pl, 4);
+
+	while (!was_added(8));
+
+	cout << "final size: " << chain_size() << endl;
+
+	cout << "close_chain()" << endl;
 	close_chain();
+	cout << "return_on_close()" << endl;
 	return_on_close();
 	cout << "********* test end **********" << endl;
+	pthread_exit(NULL);
 	return 0;
 }
 
