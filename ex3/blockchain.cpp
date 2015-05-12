@@ -20,15 +20,15 @@ bool gInitialized = false;
 pthread_mutex_t gInitMutex = PTHREAD_MUTEX_INITIALIZER;
 pthread_mutex_t gMutex;
 pthread_cond_t gAddCv;
-pthread_cond_t gCloseCv;
 vector<Block> gBlocks;
 list<int> gRoots;
 deque<int> gAddQueue;
 deque<int> gAddNowQueue;
-bool gClose;
+pthread_t gDaemonThread;
+bool gShouldClose;
 int gNumOfBlocks;
 
-/*
+/**
  * DESCRIPTION: This function initiates the Block chain, and creates the genesis Block.  The genesis Block does not hold any transaction data   
  *      or hash.
  *      This function should be called prior to any other functions as a necessary precondition for their success (all other functions should   
@@ -37,7 +37,10 @@ int gNumOfBlocks;
  */
 int init_blockchain()
 {
-    pthread_mutex_lock(&gInitMutex);
+    if (pthread_mutex_lock(&gInitMutex))
+    {
+        return -1;
+    }
     // If already initialized, return error
     if (gInitialized)
     {
@@ -51,38 +54,46 @@ int init_blockchain()
     gBlocks.push_back(genesis);
     gRoots.push_back(0);
 
-    pthread_t daemonThread;
-    int error = pthread_create(&daemonThread, nullptr, blockchain_daemon, nullptr);
-
-    if (error)
-    {
-        ERROR("return code from pthread_create() is " << error);
-        pthread_mutex_unlock(&gInitMutex);
-        return -1;
-    }
-
     // Initialize hash generator 
     init_hash_generator();
 
+    int res = 0;
     // Initialize Mutexes
-    pthread_mutex_init(&gMutex, NULL);
-    pthread_cond_init(&gAddCv, NULL);
-    pthread_cond_init(&gCloseCv, NULL);
+    if ((res = pthread_mutex_init(&gMutex, NULL)))
+    {
+        goto done;
+    }
+    if ((res = pthread_cond_init(&gAddCv, NULL)))
+    {
+        goto done;
+    }
 
     // Initialize random seed
     srand(time(NULL));
 
-    gInitialized = true;
-    gClose = false;
+    gShouldClose = false;
     gNumOfBlocks = 0;
 
+    if ((res = pthread_create(&gDaemonThread, nullptr, blockchain_daemon, nullptr)))
+    {
+        goto done;
+    }
+
+    gInitialized = true;
+
+    
+
+done:
     pthread_mutex_unlock(&gInitMutex);
-    return 0;
+    return res;
 }
 
+/**
+ * DESCRIPTION: This function closes the Block chain. 
+ */
+ // TODO i'm not sure if this functon should return an int with error -1 in case something happens
 void doClose()
 {
-    pthread_mutex_lock(&gInitMutex);
     gInitialized = false;
     close_hash_generator();
     pthread_mutex_destroy(&gMutex);
@@ -92,10 +103,12 @@ void doClose()
     gAddQueue.clear();
     gAddNowQueue.clear();
     gNumOfBlocks = 0;
-    pthread_cond_signal(&gCloseCv);
-    pthread_mutex_unlock(&gInitMutex);
 }
 
+/**
+ * DESCRIPTION: This function trys to get the global mutex.
+ * RETURN VALUE: 0 in success, -2 if it was called when the library is closing and -1 on other errors.
+ */
 int getGlobalMutex()
 {
     int res;
@@ -105,7 +118,7 @@ int getGlobalMutex()
         return -1;
     }
 
-    if (gClose)
+    if (gShouldClose)
     {
         pthread_mutex_unlock(&gInitMutex);
         return -2;
@@ -126,7 +139,7 @@ int getGlobalMutex()
     return 0;
 }
 
-/*
+/**
  * DESCRIPTION: Ultimately, the function adds the hash of the data to the Block chain.
  *      Since this is a non-blocking package, your implemented method should return as soon as possible, even before the Block was actually  
  *      attached to the chain.
@@ -140,7 +153,7 @@ int getGlobalMutex()
 int add_block(char *data , int length)
 {
     // Library must be initialized
-    if (!gInitialized | gClose)
+    if (!gInitialized | gShouldClose)
     {
         return -1;
     }
@@ -189,6 +202,7 @@ int add_block(char *data , int length)
 
         if (pthread_cond_signal(&gAddCv))
         {
+            // TODO what to do here?
             throw std::runtime_error("pthread_cond_signal returned an error");
         }
     }
@@ -203,6 +217,10 @@ int add_block(char *data , int length)
     return res;
 }
 
+/**
+ * DESCRIPTION: Returns random block_num of one of the current longest chains last blocks.
+ * RETURN VALUE: a block_num of a block that is the last block in a longest chain.
+ */
 int getLongestChain()
 {
     assert(gRoots.size() > 0);
@@ -227,11 +245,17 @@ int getLongestChain()
     return longestChains[rand() % longestChains.size()];
 }
 
+/**
+ * DESCRIPTION: The library's daemon function.
+ */
 void* blockchain_daemon(void*)
 {
     while (true)
     {
-        pthread_mutex_lock(&gMutex);
+        if (pthread_mutex_lock(&gMutex))
+        {
+            pthread_exit(NULL);
+        }
 
         int blockNum;
         bool addNow = false;
@@ -239,15 +263,17 @@ void* blockchain_daemon(void*)
         // If queues are empty, wait for them to fill
         while (gAddQueue.empty() && gAddNowQueue.empty())
         {
-            if (!gClose)
+            if (!gShouldClose)
             {
-                pthread_cond_wait(&gAddCv, &gMutex);
+                if (pthread_cond_wait(&gAddCv, &gMutex))
+                {
+                    pthread_exit(NULL); // TODO- is this ok? not too nested?
+                }
             }
 
             // If no more stuff in queue and need to close, close chain and return
-            if (gAddQueue.empty() && gAddNowQueue.empty() && gClose)
+            if (gAddQueue.empty() && gAddNowQueue.empty() && gShouldClose)
             {
-                cout << "*** CLOSING!!!!!!!!" << endl;
                 doClose();
                 pthread_exit(NULL);
             }
@@ -276,7 +302,7 @@ void* blockchain_daemon(void*)
             block.father = getLongestChain();
         }
 
-        // If block is toLongest, make sure its father is in the longest chain and don't unlock
+        // If block is toLongest, make sure its father is in the longest chain
         if (block.toLongest)
         {
             int longestFatherNum = getLongestChain();
@@ -288,49 +314,52 @@ void* blockchain_daemon(void*)
                 block.father = longestFatherNum;
             }
         }
-        else
+
+        // Unlock before hash
+        if (pthread_mutex_unlock(&gMutex))
         {
-            // Unlock before hash if not attaching to longest
-            pthread_mutex_unlock(&gMutex);
+            pthread_exit(NULL);
         }
 
         int nonce = generate_nonce(blockNum, block.father);
         char* newData = generate_hash(block.data, block.dataLength, nonce);
-        //char* newData = new char[16];
-        //newData[0] = 'l'; newData[1] = 'a';  newData[2] = 'l';  newData[3] = 'a'; newData[4] = '\0'; 
 
         free(block.data);
         block.data = newData;
         block.dataLength = HASH_LEN;
+        cout << "*** hashed " << blockNum << endl;
 
-        if (gClose)
+        if (gShouldClose)
         {
             string data(block.data, HASH_LEN);
             cout << "*** Block #" << blockNum << ", data: " << data << endl;
             continue;
         }
 
-        // Lock after hash and recheck father if wasn't toLongest
-        if (!block.toLongest)
+        // Lock after hash
+        if (pthread_mutex_lock(&gMutex))
         {
-            pthread_mutex_lock(&gMutex);
+            pthread_exit(NULL);
+        }
 
-            // If father was pruned, requeue and continue
-            if (block.father < 0)
+        // If father was pruned, requeue and continue
+        if (block.father < 0)
+        {
+            block.father = getLongestChain();
+            if (addNow)
             {
-                block.father = getLongestChain();
-                if (addNow)
-                {
-                    gAddNowQueue.push_back(blockNum);
-                }
-                else
-                {
-                    gAddQueue.push_back(blockNum);
-                }
-
-                pthread_mutex_unlock(&gMutex);
-                continue;
+                gAddNowQueue.push_back(blockNum);
             }
+            else
+            {
+                gAddQueue.push_back(blockNum);
+            }
+
+            if(pthread_mutex_unlock(&gMutex))
+            {
+                 pthread_exit(NULL);
+            }
+            continue;
         }
 
         // Attached block is the new root of the chain, replace father
@@ -351,20 +380,25 @@ void* blockchain_daemon(void*)
                 {
                     gRoots.insert(it, blockNum);
                 }
+                break;
             }
         }
-
+ 
         cout << "*** attaching " << blockNum << " to " << block.father << endl;
-
         block.attached = true;
         gBlocks[blockNum] = std::move(block);
         gNumOfBlocks++; 
+        cout << "was added: " << gBlocks[blockNum].attached << endl;
+        cout << "chain size is " << gNumOfBlocks << endl;
 
-        pthread_mutex_unlock(&gMutex);
+        if (pthread_mutex_unlock(&gMutex))
+        {
+             pthread_exit(NULL);
+        }
     }
 }
 
-/*
+/**
  * DESCRIPTION: Without blocking, enforce the policy that this block_num should be attached to the longest chain at the time of attachment of 
  *      the Block. For clearance, this is opposed to the original add_block that adds the Block to the longest chain during the time that 
  *      add_block was called.
@@ -377,7 +411,7 @@ int to_longest(int block_num)
     int res = 0;
 
     // Library must be initialized
-    if (!gInitialized || gClose)
+    if (!gInitialized || gShouldClose)
     {
         return -1;
     }
@@ -408,7 +442,7 @@ done:
     return res;
 }
 
-/*
+/**
  * DESCRIPTION: Search throughout the tree for sub-chains that are not the longest chain,
  *      detach them from the tree, free the blocks, and reuse the block_nums.
  * RETURN VALUE: On success 0, otherwise -1.
@@ -416,7 +450,7 @@ done:
 int prune_chain()
 {
     // Library must be initialized
-    if (!gInitialized || gClose)
+    if (!gInitialized || gShouldClose)
     {
         return -1;
     }
@@ -448,6 +482,7 @@ int prune_chain()
             cout << "*** prune " << cur << endl;
             int father = gBlocks[cur].father;
             gBlocks[cur].clear();
+            blocksToDelete[cur] = false;
             cur = father;
         }
     }
@@ -472,12 +507,15 @@ int prune_chain()
         }
     }
 
-    pthread_mutex_unlock(&gMutex);
+    if (pthread_mutex_unlock(&gMutex))
+    {
+        return -1;
+    }
 
     return 0;
 }
 
-/*
+/**
  * DESCRIPTION: Without blocking, check whether block_num was added to the chain.
  *      The block_num is the assigned value that was previously returned by add_block.
  * RETURN VALUE: 1 if true and 0 if false. If the block_num doesn't exist, return -2; In case of other errors, return -1.
@@ -485,18 +523,38 @@ int prune_chain()
 int was_added(int block_num)
 {
     int res;
+    // Library must be initialized
+    if (!gInitialized)
+    {
+        return -1;
+    }
+
     if (getGlobalMutex())
     {
         return -1;
     }
 
-    res = block_num < (int)gBlocks.size() ? (int)gBlocks[block_num].attached : 0;
+    // res = block_num < (int)gBlocks.size() ? (int)gBlocks[block_num].attached : 0; TODO what is this? delete please
+
+    // If block_num doesn't exist, return -2
+    if (block_num >= (int)gBlocks.size() || gBlocks[block_num].deleted)
+    {
+        res = -2;
+    }
+    else if (gBlocks[block_num].attached)
+    {
+        res = 1;
+    }
+    else
+    {
+        res = 0;
+    }
 
     pthread_mutex_unlock(&gMutex);
     return res;
 }
 
-/*
+/**
  * DESCRIPTION: Return how many Blocks were attached to the chain since init_blockchain.
  *      If the chain was closed (by using close_chain) and then initialized (init_blockchain) again this function should return 
  *      the new chain size.
@@ -505,15 +563,14 @@ int was_added(int block_num)
 int chain_size()
 {
     // Library must be initialized
-    if (!gInitialized)
+    if (!gInitialized || gShouldClose)
     {
         return -1;
     }
-
-   return gNumOfBlocks;
+    return gNumOfBlocks;
 }
 
-/*
+/**
  * DESCRIPTION: This function blocks all other Block attachments, until block_num is added to the chain. The block_num is the assigned value 
  *      that was previously returned by add_block.
  * RETURN VALUE: If block_num doesn't exist, return -2;
@@ -522,7 +579,7 @@ int chain_size()
 int attach_now(int block_num)
 {
     // Library must be initialized
-    if (!gInitialized || gClose)
+    if (!gInitialized || gShouldClose)
     {
         return -1;
     }
@@ -573,7 +630,7 @@ done:
     return res;
 }
 
-/*
+/**
  * DESCRIPTION: Close the recent blockchain and reset the system, so that it is possible to call init_blockchain again. Non-blocking.
  *      All pending Blocks should be hashed and printed to terminal (stdout).
  *      Calls to library methods which try to alter the state of the Blockchain are prohibited while closing the Blockchain. e.g.: Calling   
@@ -590,8 +647,18 @@ void close_chain()
         return;
     }
 
-    pthread_mutex_lock(&gInitMutex);
-    gClose = true;
+    if (pthread_mutex_lock(&gInitMutex))
+        {
+            pthread_exit(NULL);
+        }
+
+    if (gShouldClose)
+    {
+        pthread_mutex_unlock(&gInitMutex);
+        return;
+    }
+
+    gShouldClose = true;
 
     if ((res = pthread_cond_signal(&gAddCv)))
     {
@@ -601,24 +668,38 @@ void close_chain()
     pthread_mutex_unlock(&gInitMutex);
 }
 
-/*
+/**
  * DESCRIPTION: The function blocks and waits for close_chain to finish.
  * RETURN VALUE: If closing was successful, it returns 0.
  *      If close_chain was not called it should return -2. In case of other error, it should return -1.
 */
-
 int return_on_close()
 {
-    if (!gClose)
+    // Library must be initialized
+    if (!gInitialized)
+    {
+        return 0;
+    }
+
+    if (!gShouldClose)
     {
         return -2;
     }
 
-    pthread_mutex_lock(&gInitMutex);
-    while (gInitialized)
+    if (pthread_mutex_lock(&gInitMutex))
     {
-        pthread_cond_wait(&gCloseCv, &gInitMutex);
+        return -1;
     }
+
+    // If libarary is not initialized, blockchain is already closed
+    if (gInitialized)
+    {
+        if (pthread_join(gDaemonThread, NULL))
+        {
+            return -1;
+        }
+    }
+
     pthread_mutex_unlock(&gInitMutex);
 
     return 0;
