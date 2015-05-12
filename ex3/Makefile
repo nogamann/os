@@ -14,7 +14,7 @@ TARGETS = $(BLOCKCHAINLIB)
 
 TAR=tar
 TARFLAGS=-cvf
-TARNAME=ex2.tar
+TARNAME=ex3.tar
 TARSRCS=$(LIBSRC) blockchain_private.h Makefile README
 
 all: $(TARGETS) 
@@ -24,22 +24,10 @@ $(TARGETS): $(LIBOBJ)
 	$(RANLIB) $@
 
 clean:
-	$(RM) $(TARGETS) $(LIBOBJ) test0 *~ *core
+	$(RM) $(TARGETS) $(LIBOBJ) *~ *core
 
 depend:
 	makedepend -- $(CFLAGS) -- $(SRC) $(LIBSRC)
 
 tar:
 	$(TAR) $(TARFLAGS) $(TARNAME) $(TARSRCS)
-
-
-
-test0.o: blockchain.h test0.cpp
-	$(CC) -c ./test0.cpp
-
-test0: $(TARGETS) blockchain_private.h ./test0.o
-	$(CC) ./test0.o  -L. -lblockchain -lhash  -lpthread -L /usr/local/ssl/lib/ -lcrypto -o test0
-	
-test: test0
-
-.PHONY: test test0 test0.o

@@ -37,6 +37,9 @@ int gNumOfBlocks;
  */
 int init_blockchain()
 {
+    int res = 0;
+    Block genesis;
+
     if (pthread_mutex_lock(&gInitMutex))
     {
         return -1;
@@ -44,27 +47,26 @@ int init_blockchain()
     // If already initialized, return error
     if (gInitialized)
     {
-        ERROR("blockchain is already initialized");
-        pthread_mutex_unlock(&gInitMutex);
-        return -1;
+        res = -1;
+        goto done;
     }
 
     // Create genesis block
-    Block genesis;
     gBlocks.push_back(genesis);
     gRoots.push_back(0);
 
     // Initialize hash generator 
     init_hash_generator();
 
-    int res = 0;
     // Initialize Mutexes
-    if ((res = pthread_mutex_init(&gMutex, NULL)))
+    if (pthread_mutex_init(&gMutex, NULL))
     {
+        res = -1;
         goto done;
     }
-    if ((res = pthread_cond_init(&gAddCv, NULL)))
+    if (pthread_cond_init(&gAddCv, NULL))
     {
+        res = -1;
         goto done;
     }
 
@@ -74,35 +76,46 @@ int init_blockchain()
     gShouldClose = false;
     gNumOfBlocks = 0;
 
-    if ((res = pthread_create(&gDaemonThread, nullptr, blockchain_daemon, nullptr)))
+    if (pthread_create(&gDaemonThread, nullptr, blockchain_daemon, nullptr))
     {
+        res = -1;
         goto done;
     }
 
     gInitialized = true;
 
-    
-
 done:
-    pthread_mutex_unlock(&gInitMutex);
+    if (pthread_mutex_unlock(&gInitMutex))
+    {
+        return -1;
+    }
     return res;
 }
 
 /**
  * DESCRIPTION: This function closes the Block chain. 
  */
- // TODO i'm not sure if this functon should return an int with error -1 in case something happens
-void doClose()
+int doClose()
 {
     gInitialized = false;
     close_hash_generator();
-    pthread_mutex_destroy(&gMutex);
-    pthread_cond_destroy(&gAddCv);
+    if (pthread_mutex_destroy(&gMutex))
+    {
+        ERROR("");
+        return -1;
+    }
+    if (pthread_cond_destroy(&gAddCv))
+    {
+        ERROR("");
+        return -1;
+    }
     gBlocks.clear();
     gRoots.clear();
     gAddQueue.clear();
     gAddNowQueue.clear();
     gNumOfBlocks = 0;
+
+    return 0;
 }
 
 /**
@@ -111,32 +124,31 @@ void doClose()
  */
 int getGlobalMutex()
 {
-    int res;
-    if ((res = pthread_mutex_lock(&gInitMutex)))
+    int res = 0;
+    if (pthread_mutex_lock(&gInitMutex))
     {
-        ERROR("pthread_mutex_lock returned " << res);
         return -1;
     }
 
     if (gShouldClose)
     {
-        pthread_mutex_unlock(&gInitMutex);
-        return -2;
+        res = -2;
+        goto unlock;
     }
 
-    if ((res = pthread_mutex_lock(&gMutex)))
+    if (pthread_mutex_lock(&gMutex))
     {
-        ERROR("pthread_mutex_lock returned " << res);
+        res = -1;
+        goto unlock;
+    }
+
+unlock:
+    if (pthread_mutex_unlock(&gInitMutex))
+    {
         return -1;
     }
 
-    if ((res = pthread_mutex_unlock(&gInitMutex)))
-    {
-        ERROR("pthread_mutex_lock returned " << res);
-        return -1;
-    }
-
-    return 0;
+    return res;
 }
 
 /**
@@ -165,54 +177,46 @@ int add_block(char *data , int length)
 
     int res;
 
-    try
+    // Find a free spot for the block
+    int blockNum = -1;
+    for (size_t i = 0; i < gBlocks.size(); i++)
     {
-        // Find a free spot for the block
-        int blockNum = -1;
-        for (size_t i = 0; i < gBlocks.size(); i++)
+        if (gBlocks[i].deleted)
         {
-            if (gBlocks[i].deleted)
-            {
-                gBlocks[i].deleted = false;
-                blockNum = i;
-                break;
-            }
-        }
-
-        if (blockNum < 0)
-        {
-            gBlocks.emplace_back();
-            blockNum = gBlocks.size() - 1;
-        }
-
-        // Copy data so caller can free it
-        char *copiedData = (char*)malloc(length);
-        std::copy(data, data + length, copiedData);
-
-        int father = getLongestChain();
-        gBlocks[blockNum].father = father;
-        gBlocks[blockNum].data = copiedData;
-        gBlocks[blockNum].dataLength = length;
-        gBlocks[blockNum].chainSize = gBlocks[father].chainSize + 1;
-
-        gAddQueue.push_back(blockNum);
-        res = blockNum;
-
-        cout << "*** add_block " << blockNum << endl;
-
-        if (pthread_cond_signal(&gAddCv))
-        {
-            // TODO what to do here?
-            throw std::runtime_error("pthread_cond_signal returned an error");
+            gBlocks[i].deleted = false;
+            blockNum = i;
+            break;
         }
     }
-    catch (const std::exception& e)
+
+    if (blockNum < 0)
     {
-        ERROR(e.what());
+        gBlocks.emplace_back();
+        blockNum = gBlocks.size() - 1;
+    }
+
+    // Copy data so caller can free it
+    char *copiedData = (char*)malloc(length);
+    std::copy(data, data + length, copiedData);
+
+    int father = getLongestChain();
+    gBlocks[blockNum].father = father;
+    gBlocks[blockNum].data = copiedData;
+    gBlocks[blockNum].dataLength = length;
+    gBlocks[blockNum].chainSize = gBlocks[father].chainSize + 1;
+
+    gAddQueue.push_back(blockNum);
+    res = blockNum;
+
+    if (pthread_cond_signal(&gAddCv))
+    {
         res = -1;
     }
 
-    pthread_mutex_unlock(&gMutex);
+    if (pthread_mutex_unlock(&gMutex))
+    {
+        res = -1;
+    }
 
     return res;
 }
@@ -254,7 +258,8 @@ void* blockchain_daemon(void*)
     {
         if (pthread_mutex_lock(&gMutex))
         {
-            pthread_exit(NULL);
+            ERROR("");
+            exit(-1);
         }
 
         int blockNum;
@@ -267,14 +272,25 @@ void* blockchain_daemon(void*)
             {
                 if (pthread_cond_wait(&gAddCv, &gMutex))
                 {
-                    pthread_exit(NULL); // TODO- is this ok? not too nested?
+                    ERROR("");
+                    exit(-1);
                 }
             }
 
             // If no more stuff in queue and need to close, close chain and return
             if (gAddQueue.empty() && gAddNowQueue.empty() && gShouldClose)
             {
-                doClose();
+                if (pthread_mutex_unlock(&gMutex))
+                {
+                    ERROR("");
+                    exit(-1);
+                }
+
+                if (doClose())
+                {
+                    ERROR("");
+                    exit(-1);
+                }
                 pthread_exit(NULL);
             }
         }
@@ -318,7 +334,8 @@ void* blockchain_daemon(void*)
         // Unlock before hash
         if (pthread_mutex_unlock(&gMutex))
         {
-            pthread_exit(NULL);
+            ERROR("");
+            exit(-1);
         }
 
         int nonce = generate_nonce(blockNum, block.father);
@@ -327,19 +344,19 @@ void* blockchain_daemon(void*)
         free(block.data);
         block.data = newData;
         block.dataLength = HASH_LEN;
-        cout << "*** hashed " << blockNum << endl;
 
         if (gShouldClose)
         {
             string data(block.data, HASH_LEN);
-            cout << "*** Block #" << blockNum << ", data: " << data << endl;
+            cout << "Block #" << blockNum << ", data: " << data << endl;
             continue;
         }
 
         // Lock after hash
         if (pthread_mutex_lock(&gMutex))
         {
-            pthread_exit(NULL);
+            ERROR("");
+            exit(-1);
         }
 
         // If father was pruned, requeue and continue
@@ -357,7 +374,8 @@ void* blockchain_daemon(void*)
 
             if(pthread_mutex_unlock(&gMutex))
             {
-                 pthread_exit(NULL);
+                ERROR("");
+                exit(-1);
             }
             continue;
         }
@@ -384,16 +402,14 @@ void* blockchain_daemon(void*)
             }
         }
  
-        cout << "*** attaching " << blockNum << " to " << block.father << endl;
         block.attached = true;
         gBlocks[blockNum] = std::move(block);
-        gNumOfBlocks++; 
-        cout << "was added: " << gBlocks[blockNum].attached << endl;
-        cout << "chain size is " << gNumOfBlocks << endl;
+        gNumOfBlocks++;
 
         if (pthread_mutex_unlock(&gMutex))
         {
-             pthread_exit(NULL);
+            ERROR("");
+            exit(-1);
         }
     }
 }
@@ -438,7 +454,10 @@ int to_longest(int block_num)
     gBlocks[block_num].toLongest = true;
 
 done:
-    pthread_mutex_unlock(&gMutex);
+    if (pthread_mutex_unlock(&gMutex))
+    {
+        return -1;
+    }
     return res;
 }
 
@@ -479,7 +498,6 @@ int prune_chain()
         int cur = root;
         while (blocksToDelete[cur])
         {
-            cout << "*** prune " << cur << endl;
             int father = gBlocks[cur].father;
             gBlocks[cur].clear();
             blocksToDelete[cur] = false;
@@ -550,7 +568,10 @@ int was_added(int block_num)
         res = 0;
     }
 
-    pthread_mutex_unlock(&gMutex);
+    if (pthread_mutex_unlock(&gMutex))
+    {
+        return -1;
+    }
     return res;
 }
 
@@ -625,7 +646,10 @@ int attach_now(int block_num)
     gAddNowQueue.push_back(block_num);
 
 done:
-    pthread_mutex_unlock(&gMutex);
+    if (pthread_mutex_unlock(&gMutex))
+    {
+        return -1;
+    }
 
     return res;
 }
@@ -639,8 +663,6 @@ done:
 */
 void close_chain()
 {
-    int res;
-
     // Library must be initialized
     if (!gInitialized)
     {
@@ -648,24 +670,35 @@ void close_chain()
     }
 
     if (pthread_mutex_lock(&gInitMutex))
-        {
-            pthread_exit(NULL);
-        }
+    {
+        ERROR("");
+        exit(-1);
+    }
 
+    // If already closing, do nothing
     if (gShouldClose)
     {
-        pthread_mutex_unlock(&gInitMutex);
+        if (pthread_mutex_unlock(&gInitMutex))
+        {
+            ERROR("");
+            exit(-1);
+        }
         return;
     }
 
     gShouldClose = true;
 
-    if ((res = pthread_cond_signal(&gAddCv)))
+    if (pthread_cond_signal(&gAddCv))
     {
-        ERROR("pthread_cond_signal returned " << res);
+        ERROR("");
+        exit(-1);
     }
 
-    pthread_mutex_unlock(&gInitMutex);
+    if (pthread_mutex_unlock(&gInitMutex))
+    {
+        ERROR("");
+        exit(-1);
+    }
 }
 
 /**
@@ -700,7 +733,10 @@ int return_on_close()
         }
     }
 
-    pthread_mutex_unlock(&gInitMutex);
+    if (pthread_mutex_unlock(&gInitMutex))
+    {
+        return -1;
+    }
 
     return 0;
 }

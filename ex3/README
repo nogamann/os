@@ -1,13 +1,10 @@
 nogamann, benk
 Noga Mann (302830252), Ben Kantor (304865090)
-Ex: 2
+EX: 3
 
 FILES:
 README              - this file
-priority_queue.cpp  - implementation of a thread priority queue
-uthreads.cpp        - uthreads library implementation
-uthreads.h          - uthreads library header
-uthreads_private.h  - uthreads private header file
+????
 Makefile
 
 REMARKS:
@@ -16,15 +13,17 @@ ANSWERS:
 
 Question 1
 ----------
-RR pro: Any thread is promised to wait a time proportional to the number of threads in the system.
-In RR+ this is no longer correct, higher priority threads can starve lower priority threads.
-RR con: Can cause significant overhead for CPU intensive threads. RR+ does not solve this issue.
-PQ pro: Can lead to a more interactive system by putting interactive threads in a higher priority.
-RR+ improves on that by adding preemption.
-PQ con: Can cause starvation of lower priority threads. RR+ does not solve this issue (except for
-the case of a queue with a single thread).
+Multithreading allows different Blocks to point to the same father, since assigning a father to a Block and actually 
+attaching it to the tree are done by different threads. The parameter affecting is the amount of time since a father was assigned
+and until it was actually attached, in this case it is the time the hash function takes, so a quicker hash function can change that.
 
 Question 2
 ----------
-An example is a case when a process is waiting for data to be read from the disk. It is then blocked
-until the data was fully read and is ready.
+We can keep track of the last block in the longest chain and assign it as a father to every new Block. When we attach a block,
+if it's marked father is the longest chain block, we attach it and replace the longest chain block with it. If it's father is not
+the longest chain block, delete it, because it will never be part of the longest chain.
+
+Question 3
+----------
+When closing the chain we should make sure that no one is holding, nor will be holding, any non-static mutex because we're
+about to destroy it.

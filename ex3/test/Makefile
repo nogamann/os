@@ -43,6 +43,7 @@ test0.o: ../blockchain.h ../hash.h ./test0.cpp
 	$(CC) -c ./test0.cpp
 
 test0: $(TARGETS) ./test0.o
+	cp ../libblockchain.a .
 	$(CC) ./test0.o -L../ -lblockchain -lhash -lpthread -lcrypto -o test0
 	$(RUN)
 	
@@ -51,5 +52,5 @@ test: test0
 valgrind: $(TARGETS) ./test0.o
 	$(CC) ./test0.o -L../ -lblockchain -lhash -lpthread -lcrypto -o test0
 	valgrind --leak-check=full --show-possibly-lost=yes \
-	--show-reachable=yes --undef-value-errors=yes $(RUN)
+	--fair-sched=yes --show-reachable=yes --undef-value-errors=yes $(RUN)
 .PHONY: $(TARGETS) test test0 test0.o

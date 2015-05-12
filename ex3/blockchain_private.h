@@ -96,5 +96,5 @@ struct Block
 
 int getLongestChain();
 void* blockchain_daemon(void*);
-void doClose();
+int doClose();
 int getGlobalMutex();
