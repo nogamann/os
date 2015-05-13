@@ -29,10 +29,10 @@ bool gShouldClose;
 int gNumOfBlocks;
 
 /**
- * DESCRIPTION: This function initiates the Block chain, and creates the genesis Block.  The genesis Block does not hold any transaction data   
- *      or hash.
- *      This function should be called prior to any other functions as a necessary precondition for their success (all other functions should   
- *      return with an error otherwise).
+ * DESCRIPTION: This function initiates the Block chain, and creates the genesis Block.
+ *      The genesis Block does not hold any transaction data or hash.
+ *      This function should be called prior to any other functions as a necessary precondition for
+ *      their success (all other functions should return with an error otherwise).
  * RETURN VALUE: On success 0, otherwise -1.
  */
 int init_blockchain()
@@ -101,12 +101,10 @@ int doClose()
     close_hash_generator();
     if (pthread_mutex_destroy(&gMutex))
     {
-        ERROR("");
         return -1;
     }
     if (pthread_cond_destroy(&gAddCv))
     {
-        ERROR("");
         return -1;
     }
     gBlocks.clear();
@@ -120,7 +118,8 @@ int doClose()
 
 /**
  * DESCRIPTION: This function trys to get the global mutex.
- * RETURN VALUE: 0 in success, -2 if it was called when the library is closing and -1 on other errors.
+ * RETURN VALUE: 0 in success, -2 if it was called when the library is closing and -1 on other
+ * errors.
  */
 int getGlobalMutex()
 {
@@ -153,9 +152,10 @@ unlock:
 
 /**
  * DESCRIPTION: Ultimately, the function adds the hash of the data to the Block chain.
- *      Since this is a non-blocking package, your implemented method should return as soon as possible, even before the Block was actually  
- *      attached to the chain.
- *      Furthermore, the father Block should be determined before this function returns. The father Block should be the last Block of the 
+ *      Since this is a non-blocking package, your implemented method should return as soon as
+ *      possible, even before the Block was actually  
+ *      attached to the chain. Furthermore, the father Block should be determined before this
+ *      function returns. The father Block should be the last Block of the 
  *      current longest chain (arbitrary longest chain if there is more than one).
  *      Notice that once this call returns, the original data may be freed by the caller.
  * RETURN VALUE: On success, the function returns the lowest available block_num (> 0),
@@ -258,7 +258,6 @@ void* blockchain_daemon(void*)
     {
         if (pthread_mutex_lock(&gMutex))
         {
-            ERROR("");
             exit(-1);
         }
 
@@ -272,7 +271,6 @@ void* blockchain_daemon(void*)
             {
                 if (pthread_cond_wait(&gAddCv, &gMutex))
                 {
-                    ERROR("");
                     exit(-1);
                 }
             }
@@ -282,13 +280,11 @@ void* blockchain_daemon(void*)
             {
                 if (pthread_mutex_unlock(&gMutex))
                 {
-                    ERROR("");
                     exit(-1);
                 }
 
                 if (doClose())
                 {
-                    ERROR("");
                     exit(-1);
                 }
                 pthread_exit(NULL);
@@ -334,7 +330,6 @@ void* blockchain_daemon(void*)
         // Unlock before hash
         if (pthread_mutex_unlock(&gMutex))
         {
-            ERROR("");
             exit(-1);
         }
 
@@ -355,7 +350,6 @@ void* blockchain_daemon(void*)
         // Lock after hash
         if (pthread_mutex_lock(&gMutex))
         {
-            ERROR("");
             exit(-1);
         }
 
@@ -374,7 +368,6 @@ void* blockchain_daemon(void*)
 
             if(pthread_mutex_unlock(&gMutex))
             {
-                ERROR("");
                 exit(-1);
             }
             continue;
@@ -408,18 +401,20 @@ void* blockchain_daemon(void*)
 
         if (pthread_mutex_unlock(&gMutex))
         {
-            ERROR("");
             exit(-1);
         }
     }
 }
 
 /**
- * DESCRIPTION: Without blocking, enforce the policy that this block_num should be attached to the longest chain at the time of attachment of 
- *      the Block. For clearance, this is opposed to the original add_block that adds the Block to the longest chain during the time that 
+ * DESCRIPTION: Without blocking, enforce the policy that this block_num should be attached to the
+ *      longest chain at the time of attachment of 
+ *      the Block. For clearance, this is opposed to the original add_block that adds the Block to
+ *      the longest chain during the time that 
  *      add_block was called.
  *      The block_num is the assigned value that was previously returned by add_block. 
- * RETURN VALUE: If block_num doesn't exist, return -2; In case of other errors, return -1; In case of success return 0; In case block_num is 
+ * RETURN VALUE: If block_num doesn't exist, return -2; In case of other errors, return -1; In case
+ *      of success return 0; In case block_num is 
  *      already attached return 1.
  */
 int to_longest(int block_num)
@@ -536,7 +531,8 @@ int prune_chain()
 /**
  * DESCRIPTION: Without blocking, check whether block_num was added to the chain.
  *      The block_num is the assigned value that was previously returned by add_block.
- * RETURN VALUE: 1 if true and 0 if false. If the block_num doesn't exist, return -2; In case of other errors, return -1.
+ * RETURN VALUE: 1 if true and 0 if false. If the block_num doesn't exist, return -2; In case of
+ *      other errors, return -1.
  */
 int was_added(int block_num)
 {
@@ -551,8 +547,6 @@ int was_added(int block_num)
     {
         return -1;
     }
-
-    // res = block_num < (int)gBlocks.size() ? (int)gBlocks[block_num].attached : 0; TODO what is this? delete please
 
     // If block_num doesn't exist, return -2
     if (block_num >= (int)gBlocks.size() || gBlocks[block_num].deleted)
@@ -577,7 +571,8 @@ int was_added(int block_num)
 
 /**
  * DESCRIPTION: Return how many Blocks were attached to the chain since init_blockchain.
- *      If the chain was closed (by using close_chain) and then initialized (init_blockchain) again this function should return 
+ *      If the chain was closed (by using close_chain) and then initialized (init_blockchain) again
+ *      this function should return 
  *      the new chain size.
  * RETURN VALUE: On success, the number of Blocks, otherwise -1.
  */
@@ -592,7 +587,8 @@ int chain_size()
 }
 
 /**
- * DESCRIPTION: This function blocks all other Block attachments, until block_num is added to the chain. The block_num is the assigned value 
+ * DESCRIPTION: This function blocks all other Block attachments, until block_num is added to the 
+ *      chain. The block_num is the assigned value 
  *      that was previously returned by add_block.
  * RETURN VALUE: If block_num doesn't exist, return -2;
  *      In case of other errors, return -1; In case of success or if it is already attached return 0.
@@ -655,9 +651,11 @@ done:
 }
 
 /**
- * DESCRIPTION: Close the recent blockchain and reset the system, so that it is possible to call init_blockchain again. Non-blocking.
+ * DESCRIPTION: Close the recent blockchain and reset the system, so that it is possible to call
+ *      init_blockchain again. Non-blocking.
  *      All pending Blocks should be hashed and printed to terminal (stdout).
- *      Calls to library methods which try to alter the state of the Blockchain are prohibited while closing the Blockchain. e.g.: Calling   
+ *      Calls to library methods which try to alter the state of the Blockchain are prohibited
+ *      while closing the Blockchain. e.g.: Calling   
  *      chain_size() is ok, a call to prune_chain() should fail.
  *      In case of a system error, the function should cause the process to exit.
 */
@@ -671,7 +669,6 @@ void close_chain()
 
     if (pthread_mutex_lock(&gInitMutex))
     {
-        ERROR("");
         exit(-1);
     }
 
@@ -680,7 +677,6 @@ void close_chain()
     {
         if (pthread_mutex_unlock(&gInitMutex))
         {
-            ERROR("");
             exit(-1);
         }
         return;
@@ -690,13 +686,11 @@ void close_chain()
 
     if (pthread_cond_signal(&gAddCv))
     {
-        ERROR("");
         exit(-1);
     }
 
     if (pthread_mutex_unlock(&gInitMutex))
     {
-        ERROR("");
         exit(-1);
     }
 }
@@ -704,8 +698,8 @@ void close_chain()
 /**
  * DESCRIPTION: The function blocks and waits for close_chain to finish.
  * RETURN VALUE: If closing was successful, it returns 0.
- *      If close_chain was not called it should return -2. In case of other error, it should return -1.
-*/
+ *   If close_chain was not called it should return -2. In case of other error, it should return -1.
+ */
 int return_on_close()
 {
     // Library must be initialized

@@ -3,27 +3,41 @@ Noga Mann (302830252), Ben Kantor (304865090)
 EX: 3
 
 FILES:
-README              - this file
-????
-Makefile
+blockchain.cpp			blockchain implementation
+blockchain_private.h	private library header, not to be shared with consumer
+README					this file
+Makefile				makefile
 
 REMARKS:
+
+Our Blocks are held in a vector, such that a Block with block num X is in the Xth place of the
+vector Each Block hold it's father block num, and a boolean member indicating if it was aready
+attached to the tree. A daemon thread runs in the background and does the attaching operations
+whenever there are are Blocks to attach. Since a vector is not a thread-safe data structure, we had
+to lock it with a mutex at every use. In order to keep the daemon from busy-waiting, we used a
+condition variable. We considered using a reader-writer lock instead of a mutex in order to minimize
+the locking time, but since it's implementation along with a condition variable is complex, we chose
+not to.
+
+We used malloc() and free() because valgrind said you're using malloc in the hash library.
 
 ANSWERS:
 
 Question 1
 ----------
-Multithreading allows different Blocks to point to the same father, since assigning a father to a Block and actually 
-attaching it to the tree are done by different threads. The parameter affecting is the amount of time since a father was assigned
-and until it was actually attached, in this case it is the time the hash function takes, so a quicker hash function can change that.
+Multithreading allows different Blocks to point to the same father, since assigning a father to a
+Block and actually attaching it to the tree are done by different threads. The parameter affecting
+is the amount of time since a father was assigned and until it was actually attached, in this case
+it is the time the hash function takes, so a quicker hash function can change that.
 
 Question 2
 ----------
-We can keep track of the last block in the longest chain and assign it as a father to every new Block. When we attach a block,
-if it's marked father is the longest chain block, we attach it and replace the longest chain block with it. If it's father is not
-the longest chain block, delete it, because it will never be part of the longest chain.
+We can keep track of the last block in the longest chain and assign it as a father to every new
+Block. When we attach a block, if it's marked father is the longest chain block, we attach it and
+replace the longest chain block with it. If it's father is not the longest chain block, delete it,
+because it will never be part of the longest chain.
 
 Question 3
 ----------
-When closing the chain we should make sure that no one is holding, nor will be holding, any non-static mutex because we're
-about to destroy it.
+When closing the chain we should make sure that no one is holding, nor will be holding, any
+non-static mutex because we're about to destroy it.
