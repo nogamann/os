@@ -27,4 +27,6 @@
 *.out
 *.app
 
+mount/
+
 !libhash.a
