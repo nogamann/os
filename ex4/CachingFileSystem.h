@@ -9,10 +9,23 @@
 // maintain bbfs state in here
 #include <limits.h>
 #include <stdio.h>
+
+struct block
+{
+    char filename[PATH_MAX];
+    int blocknum;
+    int frequency;
+    bool used;
+    char data[];
+};
+
 struct caching_state
 {
     FILE *logfile;
     char *rootdir;
+    int numOfBlocks;
+    int blockSize;
+    struct block *blocks;
 };
 
 #define LOG_NAME ".filesystem.log"

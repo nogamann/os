@@ -475,7 +475,19 @@ int main(int argc, char* argv[])
     caching_data = (struct caching_state*)malloc(sizeof(struct caching_state));
     if (caching_data == NULL)
     {
-        perror("main calloc");
+        perror("main data malloc");
+        abort();
+    }
+
+    caching_data->numOfBlocks = atoi(argv[3]);
+    caching_data->blockSize = atoi(argv[4]);
+
+    caching_data->blocks = (struct block*)calloc(caching_data->numOfBlocks,
+        sizeof(struct block) + caching_data->blockSize);
+
+    if (blocks == NULL)
+    {
+        perror("main blocks calloc");
         abort();
     }
 
