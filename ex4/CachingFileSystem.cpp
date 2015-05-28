@@ -153,6 +153,13 @@ int caching_open(const char *path, struct fuse_file_info *fi){
     log_function("open");
     caching_fullpath(fpath, path);
 
+    // Do not allow logfile open
+    // TODO
+    /*if (strcmp(de->d_name, LOG_NAME) == 0)
+    {
+        return -ENOENT;
+    }*/
+
     // Only allow read only access
     if ((fi->flags & 3) != O_RDONLY)
     {
@@ -184,8 +191,9 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset, struct 
     int retstat = 0;
     
     log_function("read");
-    
-    retstat = pread(fi->fh, buf, size, offset);
+
+    retstat = cachingmanager_read(path, buf, size, offset, fi);
+    //retstat = pread(fi->fh, buf, size, offset);
     if (retstat < 0)
     {
         retstat = caching_error("caching_read read");
@@ -365,6 +373,8 @@ int caching_rename(const char *path, const char *newpath)
     {
         retstat = caching_error("caching_rename rename");
     }
+
+    cachingmanager_rename(path, newpath);
     
     return retstat;
 }
@@ -417,6 +427,7 @@ int caching_ioctl (const char *, int cmd, void *arg,
         struct fuse_file_info *, unsigned int flags, void *data)
 {
     log_function("ioctl");
+    cachingmanager_log();
     return 0;
 }
 
@@ -482,13 +493,22 @@ int main(int argc, char* argv[])
     caching_data->numOfBlocks = atoi(argv[3]);
     caching_data->blockSize = atoi(argv[4]);
 
-    caching_data->blocks = (struct block*)calloc(caching_data->numOfBlocks,
-        sizeof(struct block) + caching_data->blockSize);
+    caching_data->blocks = (struct block*)calloc(caching_data->numOfBlocks, sizeof(struct block));
 
-    if (blocks == NULL)
+    if (caching_data->blocks == NULL)
     {
         perror("main blocks calloc");
         abort();
+    }
+
+    for (int i = 0; i < caching_data->numOfBlocks; i++)
+    {
+        caching_data->blocks[i].data = (char*)malloc(caching_data->blockSize);
+        if (caching_data->blocks[i].data == NULL)
+        {
+            perror("main block data malloc");
+            abort();
+        }
     }
 
     caching_data->rootdir = realpath(argv[1], NULL);
@@ -500,8 +520,8 @@ int main(int argc, char* argv[])
     }
 
     argv[2] = (char*) "-s";
-    argv[3] = (char*) "-f";
-    argc = 4;
+    //argv[3] = (char*) "-f";
+    argc = 3;
 
     int fuse_stat = fuse_main(argc, argv, &caching_oper, caching_data);
     return fuse_stat;

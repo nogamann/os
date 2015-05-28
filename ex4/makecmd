@@ -1,4 +1,4 @@
-g++ -Wall CachingFileSystem.cpp log.c `pkg-config fuse --cflags --libs` -o caching
+g++ -Wall CachingFileSystem.cpp CachingManager.cpp log.c `pkg-config fuse --cflags --libs` -o caching
 fusermount -u /tmp/mount
-tail -F .filesystemlog
+tail -F .filesystem.log
 ./caching /cs/stud/benk/safe/os/ex4/root /tmp/mount

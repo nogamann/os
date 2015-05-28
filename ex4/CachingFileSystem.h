@@ -9,14 +9,15 @@
 // maintain bbfs state in here
 #include <limits.h>
 #include <stdio.h>
+#include <fuse.h>
 
 struct block
 {
     char filename[PATH_MAX];
     int blocknum;
+    int usedBytes;
     int frequency;
-    bool used;
-    char data[];
+    char *data;
 };
 
 struct caching_state
@@ -35,5 +36,11 @@ struct caching_state
 FILE *log_open(const char *rootdir);
 void log_msg(const char *format, ...);
 void log_function(const char *func);
+
+int cachingmanager_read(const char *path, char *buf, size_t size, off_t offset,
+    struct fuse_file_info *fi);
+struct block *cachingmanager_add(const char *path, int blocknum);
+void cachingmanager_rename(const char *path, const char *newpath);
+void cachingmanager_log(void);
 
 #endif
