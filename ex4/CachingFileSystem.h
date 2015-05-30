@@ -29,7 +29,10 @@ struct caching_state
     struct block *blocks;
 };
 
+#define SYSERR(msg) fprintf(stderr, "System Error " msg "\n")
+
 #define LOG_NAME ".filesystem.log"
+#define SLASH_LOG_NAME "/" LOG_NAME
 
 #define CACHING_DATA ((struct caching_state *) fuse_get_context()->private_data)
 

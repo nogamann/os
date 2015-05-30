@@ -33,16 +33,6 @@ static void caching_fullpath(char fpath[PATH_MAX], const char *path)
     strncat(fpath, path, PATH_MAX); // ridiculously long paths will break here
 }
 
-// Report errors to logfile and give -errno to caller
-static int caching_error(const char *str)
-{
-    int ret = -errno;
-    
-    fprintf(stderr, "    ERROR %s: %s\n", str, strerror(errno));
-    
-    return ret;
-}
-
 /** Get file attributes.
  *
  * Similar to stat().  The 'st_dev' and 'st_blksize' fields are
@@ -60,7 +50,7 @@ int caching_getattr(const char *path, struct stat *statbuf)
     retstat = lstat(fpath, statbuf);
     if (retstat != 0)
     {
-        retstat = caching_error("caching_getattr lstat");
+        retstat = -errno;
     }
     
     return retstat;
@@ -96,7 +86,7 @@ int caching_fgetattr(const char *path, struct stat *statbuf, struct fuse_file_in
     retstat = fstat(fi->fh, statbuf);
     if (retstat < 0)
     {
-        retstat = caching_error("caching_fgetattr fstat");
+        retstat = -errno;
     }
     
     return retstat;
@@ -125,7 +115,7 @@ int caching_access(const char *path, int mask)
     
     if (retstat < 0)
     {
-        retstat = caching_error("caching_access access");
+        retstat = -errno;
     }
     
     return retstat;
@@ -154,11 +144,10 @@ int caching_open(const char *path, struct fuse_file_info *fi){
     caching_fullpath(fpath, path);
 
     // Do not allow logfile open
-    // TODO
-    /*if (strcmp(de->d_name, LOG_NAME) == 0)
+    if (strcmp(path, SLASH_LOG_NAME) == 0)
     {
         return -ENOENT;
-    }*/
+    }
 
     // Only allow read only access
     if ((fi->flags & 3) != O_RDONLY)
@@ -169,7 +158,7 @@ int caching_open(const char *path, struct fuse_file_info *fi){
     fd = open(fpath, fi->flags);
     if (fd < 0)
     {
-        retstat = caching_error("caching_open open");
+        retstat = -errno;
     }
     
     fi->fh = fd;
@@ -193,10 +182,10 @@ int caching_read(const char *path, char *buf, size_t size, off_t offset, struct 
     log_function("read");
 
     retstat = cachingmanager_read(path, buf, size, offset, fi);
-    //retstat = pread(fi->fh, buf, size, offset);
+
     if (retstat < 0)
     {
-        retstat = caching_error("caching_read read");
+        retstat = -errno;
     }
     
     return retstat;
@@ -278,7 +267,7 @@ int caching_opendir(const char *path, struct fuse_file_info *fi)
     dp = opendir(fpath);
     if (dp == NULL)
     {
-        retstat = caching_error("caching_opendir opendir");
+        retstat = -errno;
     }
     
     fi->fh = (intptr_t)dp;
@@ -317,8 +306,7 @@ int caching_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t o
     de = readdir(dp);
     if (de == 0)
     {
-        retstat = caching_error("caching_readdir readdir");
-        return retstat;
+        return -errno;
     }
 
     // This will copy the entire directory into the buffer.  The loop exits
@@ -371,7 +359,7 @@ int caching_rename(const char *path, const char *newpath)
     retstat = rename(fpath, fnewpath);
     if (retstat < 0)
     {
-        retstat = caching_error("caching_rename rename");
+        retstat = -errno;
     }
 
     cachingmanager_rename(path, newpath);
@@ -407,6 +395,14 @@ void *caching_init(struct fuse_conn_info *conn)
 void caching_destroy(void *userdata)
 {
     log_function("destroy");
+
+    for (int i = 0; i < CACHING_DATA->numOfBlocks; i++)
+    {
+        free(CACHING_DATA->blocks[i].data);
+    }
+
+    free(CACHING_DATA->blocks);
+    free(CACHING_DATA);
 }
 
 
@@ -476,28 +472,52 @@ void init_caching_oper()
     caching_oper.ftruncate = NULL;
 }
 
-//basic main. You need to complete it.
+void usage()
+{
+    printf("usage: CachingFileSystem rootdir mountdir numberOfBlocks blockSize\n");
+}
+
+int dirExists(char *path)
+{
+    struct stat info;
+
+    if (stat(path, &info) != 0)
+    {
+        return 0;
+    }
+
+    return (info.st_mode & S_IFDIR);
+}
+
 int main(int argc, char* argv[])
 {
     struct caching_state *caching_data;
+
+    if (argc != 5 ||
+        !dirExists(argv[1]) || !dirExists(argv[2]) ||
+        strtol(argv[3], NULL, 0) <= 0 || strtol(argv[4], NULL, 0) <= 0)
+    {
+        usage();
+        return 1;
+    }
 
     init_caching_oper();
 
     caching_data = (struct caching_state*)malloc(sizeof(struct caching_state));
     if (caching_data == NULL)
     {
-        perror("main data malloc");
+        SYSERR("main data malloc");
         abort();
     }
 
-    caching_data->numOfBlocks = atoi(argv[3]);
-    caching_data->blockSize = atoi(argv[4]);
+    caching_data->numOfBlocks = (int)strtol(argv[3], NULL, 0);
+    caching_data->blockSize = (int)strtol(argv[4], NULL, 0);
 
     caching_data->blocks = (struct block*)calloc(caching_data->numOfBlocks, sizeof(struct block));
 
     if (caching_data->blocks == NULL)
     {
-        perror("main blocks calloc");
+        SYSERR("main blocks calloc");
         abort();
     }
 
@@ -506,7 +526,7 @@ int main(int argc, char* argv[])
         caching_data->blocks[i].data = (char*)malloc(caching_data->blockSize);
         if (caching_data->blocks[i].data == NULL)
         {
-            perror("main block data malloc");
+            SYSERR("main block data malloc");
             abort();
         }
     }
@@ -520,7 +540,6 @@ int main(int argc, char* argv[])
     }
 
     argv[2] = (char*) "-s";
-    //argv[3] = (char*) "-f";
     argc = 3;
 
     int fuse_stat = fuse_main(argc, argv, &caching_oper, caching_data);

@@ -17,18 +17,14 @@ FILE *log_open(const char *rootdir)
     char logpath[PATH_MAX];
 
     strcpy(logpath, rootdir);
-    strncat(logpath, "/", PATH_MAX);
-    strncat(logpath, LOG_NAME, PATH_MAX);
-
-    printf("%s\n", logpath);
+    strncat(logpath, SLASH_LOG_NAME, PATH_MAX);
     
     // very first thing, open up the logfile and mark that we got in
     // here.  If we can't open the logfile, we're dead.
     logfile = fopen(logpath, "a");
     if (logfile == NULL)
     {
-        fprintf(stderr, "%s", logpath);
-        perror("logfile");
+        SYSERR("unable to open log file");
         exit(EXIT_FAILURE);
     }
     

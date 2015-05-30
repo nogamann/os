@@ -1,87 +1,90 @@
 #include <limits.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdlib.h>
+#include <errno.h>
 
 #include "CachingFileSystem.h"
 
 #define BLOCKNUM(offset) ((offset) / CACHING_DATA->blockSize)
 #define OFFSET(blocknum) ((blocknum) * CACHING_DATA->blockSize)
-#define ALIGNED(offset) (BLOCKNUM(offset) * CACHING_DATA->blockSize)
 
 int cachingmanager_read(const char *path, char *buf, size_t size, off_t offset,
     struct fuse_file_info *fi)
 {
-    int readsize = 0;
+    size_t readSize = 0;
     int firstBlock = BLOCKNUM(offset);
     int lastBlock = BLOCKNUM(offset + size - 1);
-
-    printf("cachingmanager_read(path='%s', size=%d, offset=%d)\n", path, (int)size, (int)offset);
-    printf("  first: %d, last: %d\n", firstBlock, lastBlock);
+    int blockStart = offset % CACHING_DATA->blockSize;
 
     // for each block
     for (int blocknum = firstBlock; blocknum <= lastBlock; blocknum++)
     {
         struct block *block = NULL;
 
-        printf("   block %d\n", blocknum);
-
-        // check if block is in cache
+        // get block from cache
         for (int i = 0; i < CACHING_DATA->numOfBlocks; i++)
         {
             struct block* b = &CACHING_DATA->blocks[i];
 
-            if (b->frequency)
-            {
-                printf("   - index %d, num %d, name %s, freq %d\n", i, b->blocknum, b->filename, b->frequency);
-            }
-
             if (b->frequency && strcmp(b->filename, path) == 0 && b->blocknum == blocknum)
             {
+                // if trying to read after the used part of the block, there's nothing to be read
+                if (blockStart >= b->usedBytes)
+                {
+                    return 0;
+                }
+
                 block = b;
-                printf("   frequency=%d\n", block->frequency);
                 block->frequency++;
                 break;
             }
         }
 
-        // block is not in cache, read from disk
+        // if block is not in cache, read from disk
         if (block == NULL)
         {
-            printf("   read, path=%s, blocknum=%d\n", path, blocknum);
-            block = cachingmanager_add(path, blocknum);
-
-            int retstat = pread(fi->fh, block->data, CACHING_DATA->blockSize, OFFSET(blocknum));
-            if (retstat < 0)
+            char *data = (char*)malloc(CACHING_DATA->blockSize);
+            if (data == NULL)
             {
-                return retstat;
+                return -ENOMEM;
             }
+
+            int retstat = pread(fi->fh, data, CACHING_DATA->blockSize, OFFSET(blocknum));
+            // if read failed or block is empty, we're done reading
+            if (retstat <= 0)
+            {
+                free(data);
+                break;
+            }
+
+            block = cachingmanager_add(path, blocknum);
+            memcpy(block->data, data, CACHING_DATA->blockSize);
+            free(data);
 
             block->usedBytes = retstat;
         }
 
-        printf("   block->usedBytes=%d\n", block->usedBytes);
+        int blockSize = block->usedBytes - blockStart;
 
-        // calculate what range we need to copy from the block to user buffer
-        int blockStart = (blocknum == firstBlock) ? offset % CACHING_DATA->blockSize : 0;
-        int blockEnd = (blocknum == lastBlock) ?
-                       (offset + size) % CACHING_DATA->blockSize : CACHING_DATA->blockSize;
-        if (blockEnd > block->usedBytes)
+        // don't read more than "size" bytes overall
+        if (readSize + blockSize > size)
         {
-            blockEnd = block->usedBytes;
+            blockSize = size - readSize;
         }
 
-        memcpy(buf + readsize, block->data + blockStart, blockEnd - blockStart);
-        readsize += block->usedBytes;
+        memcpy(buf + readSize, block->data + blockStart, blockSize);
+        readSize += blockSize;
 
         if (block->usedBytes < CACHING_DATA->blockSize)
         {
             break;
         }
+
+        blockStart = 0;
     }
 
-    printf("   readsize=%d\n", readsize);
-
-    return readsize;
+    return readSize;
 }
 
 struct block *cachingmanager_add(const char *path, int blocknum)

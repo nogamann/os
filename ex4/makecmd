@@ -2,3 +2,4 @@ g++ -Wall CachingFileSystem.cpp CachingManager.cpp log.c `pkg-config fuse --cfla
 fusermount -u /tmp/mount
 tail -F .filesystem.log
 ./caching /cs/stud/benk/safe/os/ex4/root /tmp/mount
+python -c "import os,fcntl; fd = os.open('/tmp/mount/dira/test', os.O_RDONLY); fcntl.ioctl(fd, 0); os.close(fd)"

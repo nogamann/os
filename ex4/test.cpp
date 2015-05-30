@@ -13,84 +13,95 @@
 #include  <assert.h>
 #include <cstring>
 #include <string>
+#include <errno.h>
 #include <string.h>
+#include <sys/ioctl.h>
 
 using namespace std;
 
+#define MOUNT(path) "/tmp/mount/" path
+#define SZ 1024*10
+
 int main(int argc, char* argv[])
 {
-	if (strcmp(argv[1], "0") == 0)
-	{
-		cout << "*******test 0**********" << endl;
-		int f = open("/tmp/mount/dira/testa",O_RDONLY);
-		char * buf = (char*) malloc(5010);
-		ssize_t i;
+	int f;
+	ssize_t ret;
+	char buf[SZ];
 
-		i = pread(f, buf, 10, 0);
-		assert (i == 10);
-		cout << "read: " << i << " bytes\n" << buf << "***" << endl;
-		i = pread(f, buf, 27, 10);
-		assert (i == 27);
-		cout << "read: " << i << " bytes\n" << buf << "***" << endl;
-		close(f);
-		free(buf);
-		cout << "########end test 0#######" << endl;
-	}
-	if (strcmp(argv[1], "1") == 0)
-	{
-		cout << "*******test 1**********" << endl;
-		int f = open("/tmp/mount/dira/dira1/testa1",O_RDONLY);
-		char * buf = (char*) malloc(5010);
-		ssize_t i;
+	printf("\ntest begin\n");
 
-		i = pread(f, buf, 37, 0);
-		assert (i == 37);
-		cout << "read: " << i << " bytes\n" << buf << "***" << endl;
-		i = pread(f, buf, 74, 37);
-		assert (i == 74);
-		cout << "read: " << i << " bytes\n" << buf << "***" << endl;
-		i = pread(f, buf, 111, 111);
-			assert (i == 76);
-		cout << "read: " << i << " bytes\n" << buf << "***" << endl;
-		close(f);
-		free(buf);
-		cout << "########end test 1#######" << endl;
-	}
-	if (strcmp(argv[1], "2") == 0)
-	{
-		cout << "*******test 2**********" << endl;
-		int f = open("/tmp/mount/dirb/testb",O_RDONLY);
-		char * buf = (char*) malloc(5010);
-		ssize_t i;
+	f = open(MOUNT(".filesystem.log"),O_RDONLY);
+	assert(f == -1 && errno == ENOENT);
 
-		i = pread(f, buf, 100, 0);
-		assert (i == 39);
-		cout << "read: " << i << " bytes\n" << buf << "***" << endl;
-		i = pread(f, buf, 100, 100);
-		assert (i <= 0);
-		cout << "offset to big: " << i << endl;
-		close(f);
-		free(buf);
-		cout << "########end test 2#######" << endl;
-	}
-	if (strcmp(argv[1], "3") == 0)
-	{
-		cout << "*******test 3**********" << endl;
-		rename("/tmp/mount/dira/dira1/dira1a/testa1a", \
-				"/tmp/mount/dira/dira1/dira1a/test");
-		int f = open("/tmp/mount/dira/dira1/dira1a/test",O_RDONLY);
-		char * buf = (char*) malloc(10000);
-		ssize_t i;
+	f = open(MOUNT("qwer"),O_RDONLY);
+	assert(f == -1 && errno == ENOENT);
 
-		i = pread(f, buf, 4096, 4096);
-		assert (i == 4096);
-		cout << "read: " << i << " bytes\n" << buf << "***" << endl;
+	f = open(MOUNT("small"),O_RDWR);
+	assert(f == -1 && errno == EACCES);
+
+	f = open(MOUNT("small"),O_RDONLY);
+	assert(f > 0);
+	ioctl(f, 0);
+	close(f);
+
+	for (int i = 0; i < 5; i++)
+	{
+		f = open(MOUNT("small"),O_RDONLY);
+		memset(buf, 0, SZ);
+		ret = pread(f, buf, 1024, 0);
+		assert(ret == 11);
 		close(f);
-		free(buf);
-		rename("/tmp/mount/dira/dira1/dira1a/test", \
-						"/tmp/mount/dira/dira1/dira1a/testa1a");
-		cout << "########end test 3#######" << endl;
 	}
+
+	f = open(MOUNT("small"),O_RDONLY);
+	ioctl(f, 0);
+	memset(buf, 0, SZ);
+	ret = pread(f, buf, 2, 2);
+	assert(ret == 2);
+	ioctl(f, 0);
+	close(f);
+
+	f = open(MOUNT("large"),O_RDONLY);
+	assert(f > 0);
+
+	memset(buf, 0, SZ);
+	ret = pread(f, buf, SZ, 0);
+	cout << ret << endl;
+	assert(ret == 1024*5+1);
+
+	ioctl(f, 0);
+
+	memset(buf, 0, SZ);
+	ret = pread(f, buf, 2, 2);
+	assert(ret == 2);
+
+	cout << buf << endl;
+
+	close(f);
+
+	f = open(MOUNT("f/small"),O_RDONLY);
+	memset(buf, 0, SZ);
+	ret = pread(f, buf, 1024, 0);
+	assert(ret == 11);
+	ioctl(f, 0);
+
+	rename(MOUNT("f/small"), MOUNT("f/smaller"));
+	ioctl(f, 0);
+	rename(MOUNT("f/smaller"), MOUNT("f/small"));
+	ioctl(f, 0);
+
+	close(f);
+
+	f = open(MOUNT("empty"),O_RDONLY);
+	memset(buf, 0, SZ);
+	ret = pread(f, buf, 1024, 0);
+	assert(ret == 0);
+	ioctl(f, 0);
+	close(f);
+
+
+	printf("success!\n");
+
 	return 0;
 }
 
