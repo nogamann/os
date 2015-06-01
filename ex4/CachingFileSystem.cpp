@@ -17,8 +17,6 @@
 #include <sys/types.h>
 #include <dirent.h>
 
-using namespace std;
-
 struct fuse_operations caching_oper;
 
 
@@ -396,6 +394,8 @@ void caching_destroy(void *userdata)
 {
     log_function("destroy");
 
+    fclose(CACHING_DATA->logfile);
+
     for (int i = 0; i < CACHING_DATA->numOfBlocks; i++)
     {
         free(CACHING_DATA->blocks[i].data);
@@ -531,7 +531,11 @@ int main(int argc, char* argv[])
         }
     }
 
-    caching_data->rootdir = realpath(argv[1], NULL);
+    if (realpath(argv[1], caching_data->rootdir) == NULL)
+    {
+        SYSERR("main realpath");
+        abort();
+    }
     caching_data->logfile = log_open(caching_data->rootdir);
 
     argv[1] = argv[2];

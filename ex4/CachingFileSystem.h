@@ -23,7 +23,7 @@ struct block
 struct caching_state
 {
     FILE *logfile;
-    char *rootdir;
+    char rootdir[PATH_MAX];
     int numOfBlocks;
     int blockSize;
     struct block *blocks;
@@ -42,7 +42,7 @@ void log_function(const char *func);
 
 int cachingmanager_read(const char *path, char *buf, size_t size, off_t offset,
     struct fuse_file_info *fi);
-struct block *cachingmanager_add(const char *path, int blocknum);
+struct block *cachingmanager_allocate(const char *path, int blocknum);
 void cachingmanager_rename(const char *path, const char *newpath);
 void cachingmanager_log(void);
 

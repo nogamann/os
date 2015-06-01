@@ -9,6 +9,7 @@
 #define BLOCKNUM(offset) ((offset) / CACHING_DATA->blockSize)
 #define OFFSET(blocknum) ((blocknum) * CACHING_DATA->blockSize)
 
+/** Read from cache if data is cached, or read from disk and cache if data is not cached. */
 int cachingmanager_read(const char *path, char *buf, size_t size, off_t offset,
     struct fuse_file_info *fi)
 {
@@ -58,7 +59,7 @@ int cachingmanager_read(const char *path, char *buf, size_t size, off_t offset,
                 break;
             }
 
-            block = cachingmanager_add(path, blocknum);
+            block = cachingmanager_allocate(path, blocknum);
             memcpy(block->data, data, CACHING_DATA->blockSize);
             free(data);
 
@@ -87,7 +88,8 @@ int cachingmanager_read(const char *path, char *buf, size_t size, off_t offset,
     return readSize;
 }
 
-struct block *cachingmanager_add(const char *path, int blocknum)
+/** Allocate a block in cache, return allocated block */
+struct block *cachingmanager_allocate(const char *path, int blocknum)
 {
     struct block* block = NULL;
 
@@ -113,6 +115,7 @@ struct block *cachingmanager_add(const char *path, int blocknum)
     return block;
 }
 
+/** Rename a file in cache */
 void cachingmanager_rename(const char *path, const char *newpath)
 {
     // check if block is in cache
@@ -126,6 +129,7 @@ void cachingmanager_rename(const char *path, const char *newpath)
     }
 }
 
+/** Log all cached blocks (in response to IOCTL) */
 void cachingmanager_log(void)
 {
     // check if block is in cache
@@ -134,7 +138,7 @@ void cachingmanager_log(void)
         struct block* b = &CACHING_DATA->blocks[i];
         if (b->frequency)
         {
-            log_msg("%s %d %d\n", b->filename, b->blocknum, b->frequency);
+            log_msg("%s %d %d\n", b->filename+1, b->blocknum, b->frequency);
         }
     }
 }

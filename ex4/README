@@ -1,0 +1,72 @@
+nogamann, benk
+Noga Mann (302830252), Ben Kantor (304865090)
+EX: 4
+
+FILES:
+CachingFileSystem.cpp	fuse functions and main
+CachingFileSystem.h		caching header file
+CachingManager.c		LFU caching logic
+log.c					log helper functions
+README					this file
+Makefile				makefile
+
+REMARKS:
+
+We decided to implement LFU using an array, the main reason was implementation simplicity.
+Each slot in the array contains the file name, block number, number of used bytes, frequency counter
+and pointer to the data. The whole array, including the data, is preallocated at initialization
+because the cache is expected to be filled and allocating "on the fly" presents an unnecessary
+overhead.
+
+When trying to read a block, we first search the array for a cached block that matches the file name
+and block number. If one is found, data is retrieved from it. If not, data is read from disk and
+put in a cached block. If no slots are free, the block with the lowest frequency counter is
+replaced.
+
+When renaming a file, we rename all blocks that matches the file name in the cache array.
+
+This design helped us keep things relatively simple while keeping the complexity of read and rename
+to O(numberOfBlocks).
+
+ANSWERS:
+
+Question 1
+----------
+If we are about to read cached data that was paged out, it's contents are on the disk and there
+will be the additional overhead of pagefault, meaning the access will actually be slower.
+
+Question 2
+----------
+Both ways got advantages and disadvantages. Array based implementation will have faster access to
+the cache, as no list ordering needs to be done. List based implementation will have faster removal
+as no searching needs to be done. If there are a lot of accesses to the same blocks and few blocks
+needs to be replaced, an array is better since access to blocks that are already in cache is faster.
+If the amount of blocks accessed simultanously is much greater than cache capacity, a list will be
+better since block replacement is faster.
+
+Question 3
+----------
+File block access is handled by the OS, while memory access is handled by the MMU. To implement LRU
+algorithm for paging, we need to keep track of the order in which all pages in the system were
+accessed. This can be implemented in the OS for file blocks but not feasible for memory, as the OS
+can not keep track of every memory access (the code that tracks the memory access uses the memory..)
+so this has to be implemented in the MMU, which would cause it to be much more complicated and
+inefficient.
+
+Question 4
+----------
+LFU is better than LRU if we have some blocks that we use very frequently, and want to keep them in
+the cache even if once in a while other blocks are used.
+
+LRU is better than LFU if there are blocks that were used very frequently for a short period of
+time, and then not accessed again. In LFU new and relevant blocks will be removed from the cache
+when more blocks arrive because their counter is lower than the old files. In LRU they will
+immediately be prioritized over the old blocks.
+
+Both aren't optimal if we have a cache that can hold N items and K>N blocks are accessed cyclically.
+
+Question 5
+----------
+The OS (linux at least) reads at blocks of 4096 bytes, so this is the ideal block size for this
+exercise. Smaller blocks will cause unnecessary overhead becuase the OS will read consecutive blocks
+together anyway. Larger blocks can contain wasted memory that will never be accessed.
