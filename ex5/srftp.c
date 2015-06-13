@@ -58,6 +58,8 @@ void readFileFromSocket(int s, const char *fileName)
         
         fileSize -= bytesRead;
     }
+
+    close(fd);
 }
 
 

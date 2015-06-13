@@ -97,6 +97,8 @@ void sendFile(int s, const char *fileName, size_t fileSize)
             MAIN_ERROR("send");
         }
     }
+
+    close(fd);
 }
 
 size_t getFileSize(const char *fileName)
