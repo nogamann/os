@@ -1,0 +1,26 @@
+nogamann, benk
+Noga Mann (302830252), Ben Kantor (304865090)
+EX: 5
+
+FILES:
+README              - this file
+clftp.c				- client side implementation
+srftp.c				- server side implementation
+shared.c			- client/server shared functions
+sahred.h			- client/server shared header
+Makefile			- makefile
+
+REMARKS:
+
+ANSWERS:
+
+Question 1
+----------
+
+
+Question 2
+----------
+In the experiment we transferred files of 6 different sizes: 1kb, 100kb, 1mb, 5mb, 10mb and 20mb.
+For each file we opened the socket, transferred the file and closed the socket 100 times and
+took the average time. Judging by the results, the transmission time grows linearly with the file
+size, which is something we would expect from a reasonable protocol.
